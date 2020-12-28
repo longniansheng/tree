@@ -305,7 +305,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
       return;
     }
 
-    const { nodes } = this.treeModel;
+    const { nodes } = this.state;
 
     const soruceNode = nodes[sourceIndex];
     const destNode = nodes[destIndex];
@@ -314,6 +314,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
       .filter((node) => node.parent?.id === destNode.parent?.id)
       .findIndex((node) => node.id === destNode.id);
 
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     this.treeModel.moveNode(soruceNode.id, destNode.parent?.id!, idx);
   }
 
