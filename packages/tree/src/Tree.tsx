@@ -8,6 +8,13 @@ import type {
   TreeNodeType,
   TreeSelectStrategy,
 } from '@sinoui/tree-models';
+import {
+  DragDropContext,
+  Droppable,
+  DropResult,
+  Draggable,
+} from 'react-beautiful-dnd';
+import 'default-passive-events';
 import SingleTreeSelectStrategy from './SingleTreeSelectStrategy';
 import MultipleTreeSelectStrategy from './MultipleTreeSelectStrategy';
 import TreeNode, { TreeNodeProps } from './TreeNode';
@@ -160,6 +167,12 @@ export interface TreeProps {
    * @memberof TreeProps
    */
   isAllowEmpty?: boolean;
+  /**
+   * 是否支持拖拽
+   */
+  draggable?: boolean;
+
+  onDragEnd?: () => void;
 }
 
 export interface TreeState {
@@ -225,6 +238,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     const { selectedItems } = props;
 
     this.onTreeModelUpate = this.onTreeModelUpate.bind(this);
+    this.onDragEnd = this.onDragEnd.bind(this);
     this.createTreeModel();
     this.isControlled =
       typeof props.selectedItems !== 'undefined' &&
@@ -277,6 +291,30 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     this.setState({
       nodes: this.treeModel.getVisibleNodes(),
     });
+  }
+
+  private onDragEnd(result: DropResult) {
+    const { source, destination } = result;
+    if (!destination) {
+      return;
+    }
+    const sourceIndex = source.index;
+    const destIndex = destination.index;
+
+    if (sourceIndex === destIndex) {
+      return;
+    }
+
+    const { nodes } = this.treeModel;
+
+    const soruceNode = nodes[sourceIndex];
+    const destNode = nodes[destIndex];
+
+    const idx = nodes
+      .filter((node) => node.parent?.id === destNode.parent?.id)
+      .findIndex((node) => node.id === destNode.id);
+
+    this.treeModel.moveNode(soruceNode.id, destNode.parent?.id!, idx);
   }
 
   public updateNode = (
@@ -436,11 +474,41 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
 
   public render() {
     const { nodes } = this.state;
-    const { style, className } = this.props;
+    const { style, className, draggable } = this.props;
     const indents = calcNodesIndent(nodes, this.props);
     return (
       <Wrapper style={style} className={classNames('sinoui-tree', className)}>
-        {nodes.map((node) => this.renderTreeNode(node, indents))}
+        <DragDropContext onDragEnd={this.onDragEnd}>
+          <Droppable droppableId="dragTree" type="dragTreeItem">
+            {(provided, _snapshot) => (
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                style={{ padding: '16px 0' }}
+              >
+                {nodes.map((node, index) => (
+                  <Draggable
+                    key={node.id}
+                    draggableId={node.id}
+                    index={index}
+                    isDragDisabled={!draggable}
+                  >
+                    {(dragprovided) => (
+                      <div
+                        ref={dragprovided.innerRef}
+                        {...dragprovided.draggableProps}
+                        {...dragprovided.dragHandleProps}
+                      >
+                        {this.renderTreeNode(node, indents)}
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       </Wrapper>
     );
   }

@@ -302,6 +302,26 @@ export default class TreeModel {
   }
 
   /**
+   * 计算拖拽节点的放置位置
+   * @param parent
+   * @param pos
+   */
+  public getMoveNodePos(parent: TreeNodeType, pos: number) {
+    let pIdx = 0;
+    const idx = this.nodes.findIndex((node) => {
+      if (node.parent?.id === parent.id) {
+        if (pIdx === pos) {
+          return true;
+        }
+        pIdx += 1;
+      }
+      return false;
+    });
+
+    return idx;
+  }
+
+  /**
    * 获取相对于父元素位置的节点
    *
    * @param parent 父节点
@@ -362,7 +382,7 @@ export default class TreeModel {
       ? this.getNodeById(parentId)
       : this.virtualRootNode;
     const prevIdx = this.getNodeIdx(node);
-    const nextIdx = this.getInsertNodePos(nextParent, pos);
+    const nextIdx = this.getMoveNodePos(nextParent, pos);
 
     const count = this.getDescendantCount(node) + 1;
     const movingNodes = this.nodes.splice(prevIdx, count);
@@ -397,11 +417,10 @@ export default class TreeModel {
    * @param nodeId 子节点
    */
   public isInheritanceRelationship(parentId: string, nodeId: string) {
-    const parent = this.getNodeById(parentId);
     let node = this.getNodeById(nodeId);
 
     while (node) {
-      if (node === parent) {
+      if (node.id === parentId) {
         return true;
       }
       node = node.parent as TreeNodeType;
