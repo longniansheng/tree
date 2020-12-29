@@ -13,6 +13,7 @@ import {
   Droppable,
   DropResult,
   Draggable,
+  DragUpdate,
 } from 'react-beautiful-dnd';
 import 'default-passive-events';
 import SingleTreeSelectStrategy from './SingleTreeSelectStrategy';
@@ -20,6 +21,7 @@ import MultipleTreeSelectStrategy from './MultipleTreeSelectStrategy';
 import TreeNode, { TreeNodeProps } from './TreeNode';
 import CascadeTreeSelectStrategy from './CascadeTreeSelectStrategy';
 import calcNodesIndent from './calcNodesIndent';
+import Delay from './delay';
 
 const Wrapper = styled.div`
   position: relative;
@@ -225,6 +227,8 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
    */
   private isControlled: boolean;
 
+  private delay;
+
   // eslint-disable-next-line react/static-property-placement
   public static defaultProps = {
     renderNode: TreeNode,
@@ -237,8 +241,10 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     super(props);
     const { selectedItems } = props;
 
+    this.delay = new Delay(500);
     this.onTreeModelUpate = this.onTreeModelUpate.bind(this);
     this.onDragEnd = this.onDragEnd.bind(this);
+    this.onDragUpdate = this.onDragUpdate.bind(this);
     this.createTreeModel();
     this.isControlled =
       typeof props.selectedItems !== 'undefined' &&
@@ -294,7 +300,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
   }
 
   private onDragEnd(result: DropResult) {
-    const { source, destination } = result;
+    const { source, destination, draggableId } = result;
     if (!destination) {
       return;
     }
@@ -304,18 +310,32 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     if (sourceIndex === destIndex) {
       return;
     }
+    // 判断向下拖动
+    // const down = destIndex > sourceIndex;
 
     const { nodes } = this.state;
 
-    const soruceNode = nodes[sourceIndex];
     const destNode = nodes[destIndex];
 
     const idx = nodes
       .filter((node) => node.parent?.id === destNode.parent?.id)
       .findIndex((node) => node.id === destNode.id);
-
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    this.treeModel.moveNode(soruceNode.id, destNode.parent?.id!, idx);
+    this.treeModel.moveNode(draggableId, destNode.parent?.id!, idx);
+  }
+
+  public onDragUpdate(initial: DragUpdate) {
+    if (initial.combine) {
+      const draggabledId = initial.combine.draggableId;
+
+      const node = this.treeModel.getNodeById(draggabledId);
+
+      if (node && node.children && node.children.length > 0 && !node.expanded) {
+        this.delay.start(() => {
+          this.treeModel.updateNode(draggabledId, { ...node, expanded: true });
+        });
+      }
+    }
   }
 
   public updateNode = (
@@ -479,14 +499,17 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     const indents = calcNodesIndent(nodes, this.props);
     return (
       <Wrapper style={style} className={classNames('sinoui-tree', className)}>
-        <DragDropContext onDragEnd={this.onDragEnd}>
-          <Droppable droppableId="dragTree" type="dragTreeItem">
+        <DragDropContext
+          onDragEnd={this.onDragEnd}
+          onDragUpdate={this.onDragUpdate}
+        >
+          <Droppable
+            droppableId="dragTree"
+            type="dragTreeItem"
+            isCombineEnabled
+          >
             {(provided, _snapshot) => (
-              <div
-                {...provided.droppableProps}
-                ref={provided.innerRef}
-                style={{ padding: '16px 0' }}
-              >
+              <div {...provided.droppableProps} ref={provided.innerRef}>
                 {nodes.map((node, index) => (
                   <Draggable
                     key={node.id}
@@ -494,15 +517,33 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
                     index={index}
                     isDragDisabled={!draggable}
                   >
-                    {(dragprovided) => (
-                      <div
-                        ref={dragprovided.innerRef}
-                        {...dragprovided.draggableProps}
-                        {...dragprovided.dragHandleProps}
-                      >
-                        {this.renderTreeNode(node, indents)}
-                      </div>
-                    )}
+                    {(dragprovided) => {
+                      const {
+                        style: dragStyle,
+                        ...rest
+                      } = dragprovided.draggableProps;
+                      const transitions: string[] =
+                        dragStyle && dragStyle.transition
+                          ? [dragStyle.transition, 'padding-left 0.5s']
+                          : ['padding-left 0.5s'];
+
+                      const transition = transitions.join(', ');
+
+                      return (
+                        <div
+                          ref={dragprovided.innerRef}
+                          {...rest}
+                          style={{
+                            ...dragStyle,
+                            transition,
+                            paddingLeft: `${indents[node.id] * 24}px`,
+                          }}
+                          {...dragprovided.dragHandleProps}
+                        >
+                          {this.renderTreeNode(node, indents)}
+                        </div>
+                      );
+                    }}
                   </Draggable>
                 ))}
                 {provided.placeholder}

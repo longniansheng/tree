@@ -64,7 +64,7 @@ const TreeNodeLayout = styled.div<Props>`
     cursor: default;
   }
 
-  padding-left: ${(props) => props.indent * 24}px;
+  /* padding-left: ${(props) => props.indent * 24}px; */
 
   background-color: ${(props) =>
     props.node.selected &&

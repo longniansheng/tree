@@ -382,10 +382,10 @@ export default class TreeModel {
       ? this.getNodeById(parentId)
       : this.virtualRootNode;
     const prevIdx = this.getNodeIdx(node);
-    const nextIdx = this.getMoveNodePos(nextParent, pos);
 
     const count = this.getDescendantCount(node) + 1;
     const movingNodes = this.nodes.splice(prevIdx, count);
+    const nextIdx = this.getMoveNodePos(nextParent, pos);
     this.nodes.splice(nextIdx, 0, ...movingNodes);
 
     if (prevParent !== nextParent) {
