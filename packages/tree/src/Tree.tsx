@@ -311,11 +311,20 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
       return;
     }
     // 判断向下拖动
-    // const down = destIndex > sourceIndex;
+    const down = destIndex > sourceIndex;
 
     const { nodes } = this.state;
 
-    const destNode = nodes[destIndex];
+    let destNode = nodes[destIndex];
+
+    // 需要判断的场景
+    if (
+      down &&
+      nodes[destIndex + 1] &&
+      nodes[destIndex + 1].level > nodes[destIndex].level
+    ) {
+      destNode = nodes[destIndex + 1];
+    }
 
     const idx = nodes
       .filter((node) => node.parent?.id === destNode.parent?.id)
