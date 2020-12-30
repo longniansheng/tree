@@ -48,7 +48,7 @@ export interface TreeNodeProps {
    * @type {number}
    * @memberof TreeNodeProps
    */
-  indent: number;
+  indent?: number;
 }
 
 /**

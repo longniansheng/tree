@@ -14,7 +14,9 @@ import {
   DropResult,
   Draggable,
   DragUpdate,
-} from 'react-beautiful-dnd';
+  DraggableStateSnapshot,
+  DraggableProvided,
+} from 'react-beautiful-dnd-next';
 import 'default-passive-events';
 import SingleTreeSelectStrategy from './SingleTreeSelectStrategy';
 import MultipleTreeSelectStrategy from './MultipleTreeSelectStrategy';
@@ -25,6 +27,8 @@ import Delay from './delay';
 
 const Wrapper = styled.div`
   position: relative;
+
+  user-select: none;
 
   .sinoui-tree-item-moving {
     transition: transform 195ms cubic-bezier(0, 0, 0.32, 1) !important;
@@ -182,6 +186,8 @@ export interface TreeState {
   selectedItems: string[] | undefined;
   treeSelectStrategy: TreeSelectStrategy;
   prevProps: TreeProps;
+
+  draggedItemId?: string;
 }
 
 function monitorFnCall<
@@ -245,6 +251,8 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     this.onTreeModelUpate = this.onTreeModelUpate.bind(this);
     this.onDragEnd = this.onDragEnd.bind(this);
     this.onDragUpdate = this.onDragUpdate.bind(this);
+    this.renderItems = this.renderItems.bind(this);
+    this.renderItem = this.renderItem.bind(this);
     this.createTreeModel();
     this.isControlled =
       typeof props.selectedItems !== 'undefined' &&
@@ -347,6 +355,17 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     }
   }
 
+  private renderDraggableItem = (
+    node: TreeNodeType,
+    indents: { [x: string]: number },
+  ) => (provided: DraggableProvided, snapshot: DraggableStateSnapshot) => {
+    if (snapshot.isDropAnimating) {
+      this.delay.stop();
+    }
+
+    return this.renderTreeNode(node, indents, provided, snapshot);
+  };
+
   public updateNode = (
     nodeId: string,
     extraNodeInfo: {
@@ -440,6 +459,29 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     });
   }
 
+  private renderItems(indents: { [id: string]: number }) {
+    const { nodes } = this.state;
+    return nodes.map((node, idx) => this.renderItem(node, idx, indents));
+  }
+
+  private renderItem(
+    node: TreeNodeType,
+    index: number,
+    indents: { [id: string]: number },
+  ) {
+    const { draggable } = this.props;
+    return (
+      <Draggable
+        key={node.id}
+        draggableId={node.id}
+        index={index}
+        isDragDisabled={!draggable}
+      >
+        {this.renderDraggableItem(node, indents) as any}
+      </Draggable>
+    );
+  }
+
   /**
    * 渲染树节点
    *
@@ -448,9 +490,9 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
    */
   private renderTreeNode(
     node: TreeNodeType,
-    indents: {
-      [id: string]: number;
-    },
+    indents: { [x: string]: number },
+    provided: DraggableProvided,
+    _snapshot: DraggableStateSnapshot,
   ) {
     const selected = this.isSelected(node);
     const partialSelected = !selected && this.isPartialSelected(node);
@@ -493,18 +535,37 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
       onClick: onNodeClick,
       onDblClick: onNodeDblClick,
       renderNodeTitle,
-      indent: indents[node.id],
     };
 
     if (renderNode) {
-      return renderNode(treeNodeProps);
+      const { style: dragStyle, ...rest } = provided.draggableProps;
+      const transitions: string[] =
+        dragStyle && dragStyle.transition
+          ? [dragStyle.transition, 'padding-left 0.5s']
+          : ['padding-left 0.5s'];
+
+      const transition = transitions.join(', ');
+      return (
+        <div
+          ref={provided.innerRef}
+          {...rest}
+          style={{
+            ...dragStyle,
+            transition,
+            paddingLeft: `${indents[node.id] * 24}px`,
+          }}
+          {...provided.dragHandleProps}
+        >
+          {renderNode(treeNodeProps)}
+        </div>
+      );
     }
     return null;
   }
 
   public render() {
     const { nodes } = this.state;
-    const { style, className, draggable } = this.props;
+    const { style, className } = this.props;
     const indents = calcNodesIndent(nodes, this.props);
     return (
       <Wrapper style={style} className={classNames('sinoui-tree', className)}>
@@ -516,48 +577,20 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
             droppableId="dragTree"
             type="dragTreeItem"
             isCombineEnabled
+            ignoreContainerClipping
           >
-            {(provided, _snapshot) => (
-              <div {...provided.droppableProps} ref={provided.innerRef}>
-                {nodes.map((node, index) => (
-                  <Draggable
-                    key={node.id}
-                    draggableId={node.id}
-                    index={index}
-                    isDragDisabled={!draggable}
-                  >
-                    {(dragprovided) => {
-                      const {
-                        style: dragStyle,
-                        ...rest
-                      } = dragprovided.draggableProps;
-                      const transitions: string[] =
-                        dragStyle && dragStyle.transition
-                          ? [dragStyle.transition, 'padding-left 0.5s']
-                          : ['padding-left 0.5s'];
-
-                      const transition = transitions.join(', ');
-
-                      return (
-                        <div
-                          ref={dragprovided.innerRef}
-                          {...rest}
-                          style={{
-                            ...dragStyle,
-                            transition,
-                            paddingLeft: `${indents[node.id] * 24}px`,
-                          }}
-                          {...dragprovided.dragHandleProps}
-                        >
-                          {this.renderTreeNode(node, indents)}
-                        </div>
-                      );
-                    }}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
-              </div>
-            )}
+            {(provided: any, _snapshot: any) => {
+              return (
+                <div
+                  ref={provided.innerRef}
+                  style={{ pointerEvents: 'auto' }}
+                  {...provided.droppableProps}
+                >
+                  {this.renderItems(indents)}
+                  {provided.placeholder}
+                </div>
+              );
+            }}
           </Droppable>
         </DragDropContext>
       </Wrapper>
