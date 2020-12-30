@@ -12,20 +12,22 @@ import {
   DragDropContext,
   Droppable,
   DropResult,
-  Draggable,
   DragUpdate,
 } from 'react-beautiful-dnd';
 import 'default-passive-events';
+import { FixedSizeList } from 'react-window';
 import SingleTreeSelectStrategy from './SingleTreeSelectStrategy';
 import MultipleTreeSelectStrategy from './MultipleTreeSelectStrategy';
 import TreeNode, { TreeNodeProps } from './TreeNode';
 import CascadeTreeSelectStrategy from './CascadeTreeSelectStrategy';
 import calcNodesIndent from './calcNodesIndent';
+import Row from './Row';
+import TreeRenderContext from './TreeRenderContext';
+
 import Delay from './delay';
 
 const Wrapper = styled.div`
   position: relative;
-
   .sinoui-tree-item-moving {
     transition: transform 195ms cubic-bezier(0, 0, 0.32, 1) !important;
   }
@@ -243,6 +245,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
 
     this.delay = new Delay(500);
     this.onTreeModelUpate = this.onTreeModelUpate.bind(this);
+    this.renderTreeNode = this.renderTreeNode.bind(this);
     this.onDragEnd = this.onDragEnd.bind(this);
     this.onDragUpdate = this.onDragUpdate.bind(this);
     this.createTreeModel();
@@ -310,35 +313,45 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     if (sourceIndex === destIndex) {
       return;
     }
+
+    this.delay.stop();
     // 判断向下拖动
     const down = destIndex > sourceIndex;
 
-    const { nodes } = this.state;
+    let { nodes } = this.state;
 
     let destNode = nodes[destIndex];
 
     // 需要判断的场景
-    if (
-      down &&
-      nodes[destIndex + 1] &&
-      nodes[destIndex + 1].level > nodes[destIndex].level
-    ) {
-      destNode = nodes[destIndex + 1];
+    if (down) {
+      nodes = nodes.filter((node) => node.id !== draggableId);
+      if (
+        nodes[destIndex + 1] &&
+        nodes[destIndex + 1].level > nodes[destIndex].level
+      ) {
+        destNode = nodes[destIndex + 1];
+      }
     }
 
-    const idx = nodes
-      .filter((node) => node.parent?.id === destNode.parent?.id)
-      .findIndex((node) => node.id === destNode.id);
+    const idx =
+      nodes
+        .filter((node) => node.parent?.id === destNode.parent?.id)
+        .findIndex((node) => node.id === destNode.id) + (down ? 1 : 0);
+
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     this.treeModel.moveNode(draggableId, destNode.parent?.id!, idx);
   }
+
+  public onDragStart = (result: DropResult) => {
+    const { draggableId } = result;
+    this.treeModel.collapseNode(draggableId);
+  };
 
   public onDragUpdate(initial: DragUpdate) {
     if (initial.combine) {
       const draggabledId = initial.combine.draggableId;
 
       const node = this.treeModel.getNodeById(draggabledId);
-
       if (node && node.children && node.children.length > 0 && !node.expanded) {
         this.delay.start(() => {
           this.treeModel.updateNode(draggabledId, { ...node, expanded: true });
@@ -446,12 +459,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
    * @param node 节点
    * @param index 顺序号
    */
-  private renderTreeNode(
-    node: TreeNodeType,
-    indents: {
-      [id: string]: number;
-    },
-  ) {
+  private renderTreeNode(node: TreeNodeType): React.ReactNode | null {
     const selected = this.isSelected(node);
     const partialSelected = !selected && this.isPartialSelected(node);
     const isVisible = this.isVisible(node as any);
@@ -493,7 +501,6 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
       onClick: onNodeClick,
       onDblClick: onNodeDblClick,
       renderNodeTitle,
-      indent: indents[node.id],
     };
 
     if (renderNode) {
@@ -508,58 +515,67 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     const indents = calcNodesIndent(nodes, this.props);
     return (
       <Wrapper style={style} className={classNames('sinoui-tree', className)}>
-        <DragDropContext
-          onDragEnd={this.onDragEnd}
-          onDragUpdate={this.onDragUpdate}
+        <TreeRenderContext.Provider
+          value={{
+            indents,
+            renderTreeNode: this.renderTreeNode,
+            isDragDisabled: !draggable,
+          }}
         >
-          <Droppable
-            droppableId="dragTree"
-            type="dragTreeItem"
-            isCombineEnabled
+          <DragDropContext
+            onDragEnd={this.onDragEnd}
+            onDragStart={this.onDragStart}
+            onDragUpdate={this.onDragUpdate}
           >
-            {(provided, _snapshot) => (
-              <div {...provided.droppableProps} ref={provided.innerRef}>
-                {nodes.map((node, index) => (
-                  <Draggable
-                    key={node.id}
-                    draggableId={node.id}
-                    index={index}
-                    isDragDisabled={!draggable}
-                  >
-                    {(dragprovided) => {
-                      const {
-                        style: dragStyle,
-                        ...rest
-                      } = dragprovided.draggableProps;
-                      const transitions: string[] =
-                        dragStyle && dragStyle.transition
-                          ? [dragStyle.transition, 'padding-left 0.5s']
-                          : ['padding-left 0.5s'];
+            <Droppable
+              droppableId="dragTree"
+              type="dragTreeItem"
+              isCombineEnabled
+              ignoreContainerClipping
+              mode="virtual"
+              renderClone={(provided, _snapshot, rubric) => {
+                const { style: dragStyle, ...rest } = provided.draggableProps;
+                const transitions: string[] =
+                  dragStyle && dragStyle.transition
+                    ? [dragStyle.transition, 'padding-left 0.5s']
+                    : ['padding-left 0.5s'];
 
-                      const transition = transitions.join(', ');
-
-                      return (
-                        <div
-                          ref={dragprovided.innerRef}
-                          {...rest}
-                          style={{
-                            ...dragStyle,
-                            transition,
-                            paddingLeft: `${indents[node.id] * 24}px`,
-                          }}
-                          {...dragprovided.dragHandleProps}
-                        >
-                          {this.renderTreeNode(node, indents)}
-                        </div>
-                      );
+                const transition = transitions.join(', ');
+                const item = nodes[rubric.source.index];
+                return (
+                  <div
+                    ref={provided.innerRef}
+                    {...rest}
+                    style={{
+                      ...dragStyle,
+                      ...style,
+                      transition,
+                      paddingLeft: `${indents[item.id] * 24}px`,
                     }}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
-              </div>
-            )}
-          </Droppable>
-        </DragDropContext>
+                    {...provided.dragHandleProps}
+                  >
+                    {this.renderTreeNode(item)}
+                  </div>
+                );
+              }}
+            >
+              {(provided, _snapshot) => (
+                <div {...provided.droppableProps}>
+                  <FixedSizeList
+                    height={500}
+                    itemCount={nodes.length}
+                    itemSize={32}
+                    width={300}
+                    outerRef={provided.innerRef}
+                    itemData={nodes}
+                  >
+                    {Row}
+                  </FixedSizeList>
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+        </TreeRenderContext.Provider>
       </Wrapper>
     );
   }

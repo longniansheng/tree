@@ -42,13 +42,13 @@ export interface TreeNodeProps {
     treeNodeProps: TreeNodeProps,
   ) => void;
 
-  /**
-   * 缩进
-   *
-   * @type {number}
-   * @memberof TreeNodeProps
-   */
-  indent: number;
+  // /**
+  //  * 缩进
+  //  *
+  //  * @type {number}
+  //  * @memberof TreeNodeProps
+  //  */
+  // indent: number;
 }
 
 /**
