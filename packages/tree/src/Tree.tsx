@@ -13,21 +13,25 @@ import {
   Droppable,
   DropResult,
   DragUpdate,
-} from 'react-beautiful-dnd';
-import 'default-passive-events';
+} from 'react-beautiful-dnd-next';
 import { FixedSizeList } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
+import 'default-passive-events';
 import SingleTreeSelectStrategy from './SingleTreeSelectStrategy';
 import MultipleTreeSelectStrategy from './MultipleTreeSelectStrategy';
 import TreeNode, { TreeNodeProps } from './TreeNode';
 import CascadeTreeSelectStrategy from './CascadeTreeSelectStrategy';
 import calcNodesIndent from './calcNodesIndent';
-import Row from './Row';
-import TreeRenderContext from './TreeRenderContext';
-
 import Delay from './delay';
+import calcDestPos from './calcDestPos';
+import TreeRow from './TreeRow';
+import TreeRenderContext from './TreeRenderContext';
 
 const Wrapper = styled.div`
   position: relative;
+  user-select: none;
+  height: '100%';
+
   .sinoui-tree-item-moving {
     transition: transform 195ms cubic-bezier(0, 0, 0.32, 1) !important;
   }
@@ -245,9 +249,10 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
 
     this.delay = new Delay(500);
     this.onTreeModelUpate = this.onTreeModelUpate.bind(this);
-    this.renderTreeNode = this.renderTreeNode.bind(this);
     this.onDragEnd = this.onDragEnd.bind(this);
     this.onDragUpdate = this.onDragUpdate.bind(this);
+    this.onDragStart = this.onDragStart.bind(this);
+    this.renderTreeNode = this.renderTreeNode.bind(this);
     this.createTreeModel();
     this.isControlled =
       typeof props.selectedItems !== 'undefined' &&
@@ -303,7 +308,17 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
   }
 
   private onDragEnd(result: DropResult) {
-    const { source, destination, draggableId } = result;
+    this.delay.stop();
+    const { source, destination, draggableId, combine } = result;
+
+    if (combine) {
+      const parentId = combine.draggableId;
+
+      this.treeModel.moveNode(draggableId, parentId, -1);
+
+      return;
+    }
+
     if (!destination) {
       return;
     }
@@ -314,49 +329,34 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
       return;
     }
 
-    this.delay.stop();
-    // 判断向下拖动
-    const down = destIndex > sourceIndex;
-
-    let { nodes } = this.state;
-
-    let destNode = nodes[destIndex];
-
-    // 需要判断的场景
-    if (down) {
-      nodes = nodes.filter((node) => node.id !== draggableId);
-      if (
-        nodes[destIndex + 1] &&
-        nodes[destIndex + 1].level > nodes[destIndex].level
-      ) {
-        destNode = nodes[destIndex + 1];
-      }
-    }
-
-    const idx =
-      nodes
-        .filter((node) => node.parent?.id === destNode.parent?.id)
-        .findIndex((node) => node.id === destNode.id) + (down ? 1 : 0);
+    const { nodes } = this.state;
+    const { parentId, pos } = calcDestPos(nodes, sourceIndex, destIndex);
 
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    this.treeModel.moveNode(draggableId, destNode.parent?.id!, idx);
+    this.treeModel.moveNode(draggableId, parentId!, pos);
   }
 
-  public onDragStart = (result: DropResult) => {
-    const { draggableId } = result;
-    this.treeModel.collapseNode(draggableId);
-  };
-
   public onDragUpdate(initial: DragUpdate) {
+    this.delay.stop();
     if (initial.combine) {
-      const draggabledId = initial.combine.draggableId;
+      const { draggableId } = initial.combine;
 
-      const node = this.treeModel.getNodeById(draggabledId);
+      const node = this.treeModel.getNodeById(draggableId);
+
       if (node && node.children && node.children.length > 0 && !node.expanded) {
         this.delay.start(() => {
-          this.treeModel.updateNode(draggabledId, { ...node, expanded: true });
+          this.treeModel.updateNode(draggableId, { ...node, expanded: true });
         });
       }
+    }
+  }
+
+  public onDragStart(result: DropResult) {
+    const { draggableId } = result;
+    const node = this.treeModel.getNodeById(draggableId);
+
+    if (node && node.children && node.children.length > 0 && node.expanded) {
+      this.treeModel.updateNode(draggableId, { ...node, expanded: false });
     }
   }
 
@@ -459,7 +459,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
    * @param node 节点
    * @param index 顺序号
    */
-  private renderTreeNode(node: TreeNodeType): React.ReactNode | null {
+  private renderTreeNode(node: TreeNodeType) {
     const selected = this.isSelected(node);
     const partialSelected = !selected && this.isPartialSelected(node);
     const isVisible = this.isVisible(node as any);
@@ -524,16 +524,15 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
         >
           <DragDropContext
             onDragEnd={this.onDragEnd}
-            onDragStart={this.onDragStart}
             onDragUpdate={this.onDragUpdate}
+            onDragStart={this.onDragStart}
           >
             <Droppable
               droppableId="dragTree"
               type="dragTreeItem"
               isCombineEnabled
               ignoreContainerClipping
-              mode="virtual"
-              renderClone={(provided, _snapshot, rubric) => {
+              renderClone={(provided: any, _snapshot: any, rubric: any) => {
                 const { style: dragStyle, ...rest } = provided.draggableProps;
                 const transitions: string[] =
                   dragStyle && dragStyle.transition
@@ -545,6 +544,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
                 return (
                   <div
                     ref={provided.innerRef}
+                    key={item.id}
                     {...rest}
                     style={{
                       ...dragStyle,
@@ -559,20 +559,28 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
                 );
               }}
             >
-              {(provided, _snapshot) => (
-                <div {...provided.droppableProps}>
-                  <FixedSizeList
-                    height={500}
-                    itemCount={nodes.length}
-                    itemSize={32}
-                    width={300}
-                    outerRef={provided.innerRef}
-                    itemData={nodes}
+              {(provided: any, _snapshot: any) => {
+                return (
+                  <div
+                    ref={provided.innerRef}
+                    style={{
+                      pointerEvents: 'auto',
+                    }}
+                    {...provided.droppableProps}
                   >
-                    {Row}
-                  </FixedSizeList>
-                </div>
-              )}
+                    <FixedSizeList
+                      height={300}
+                      itemCount={nodes.length}
+                      itemSize={32}
+                      width="100%"
+                      outerRef={provided.innerRef}
+                      itemData={nodes}
+                    >
+                      {TreeRow}
+                    </FixedSizeList>
+                  </div>
+                );
+              }}
             </Droppable>
           </DragDropContext>
         </TreeRenderContext.Provider>

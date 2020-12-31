@@ -26,7 +26,6 @@ export interface Props {
   isDragging?: boolean;
   multiple?: boolean;
   disableSelectedNodeStyle?: boolean;
-  indent: number;
 }
 
 const TreeNodeLayout = styled.div<Props>`
