@@ -42,11 +42,11 @@ yarn add @sinoui/tree
                 false,
               ).map((node) => ({ ...node, selectType: 'checkbox' })),
             );
-          }, 1500);
+          }, 500);
         });
         return promise;
       }
     };
-    return <Tree loadChildren={loadChildren} multiple cascade draggable />;
+    return <div style={{height: '300px', overflowY:'auto'}}><Tree loadChildren={loadChildren} multiple cascade draggable /></div>;
   }}
 </Playground>

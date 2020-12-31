@@ -24,10 +24,10 @@ import TreeNode, { TreeNodeProps } from './TreeNode';
 import CascadeTreeSelectStrategy from './CascadeTreeSelectStrategy';
 import calcNodesIndent from './calcNodesIndent';
 import Delay from './delay';
+import calcDestPos from './calcDestPos';
 
 const Wrapper = styled.div`
   position: relative;
-
   user-select: none;
 
   .sinoui-tree-item-moving {
@@ -186,8 +186,6 @@ export interface TreeState {
   selectedItems: string[] | undefined;
   treeSelectStrategy: TreeSelectStrategy;
   prevProps: TreeProps;
-
-  draggedItemId?: string;
 }
 
 function monitorFnCall<
@@ -251,6 +249,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     this.onTreeModelUpate = this.onTreeModelUpate.bind(this);
     this.onDragEnd = this.onDragEnd.bind(this);
     this.onDragUpdate = this.onDragUpdate.bind(this);
+    this.onDragStart = this.onDragStart.bind(this);
     this.renderItems = this.renderItems.bind(this);
     this.renderItem = this.renderItem.bind(this);
     this.createTreeModel();
@@ -308,7 +307,17 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
   }
 
   private onDragEnd(result: DropResult) {
-    const { source, destination, draggableId } = result;
+    this.delay.stop();
+    const { source, destination, draggableId, combine } = result;
+
+    if (combine) {
+      const parentId = combine.draggableId;
+
+      this.treeModel.moveNode(draggableId, parentId, -1);
+
+      return;
+    }
+
     if (!destination) {
       return;
     }
@@ -318,40 +327,35 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
     if (sourceIndex === destIndex) {
       return;
     }
-    // 判断向下拖动
-    const down = destIndex > sourceIndex;
 
     const { nodes } = this.state;
+    const { parentId, pos } = calcDestPos(nodes, sourceIndex, destIndex);
 
-    let destNode = nodes[destIndex];
-
-    // 需要判断的场景
-    if (
-      down &&
-      nodes[destIndex + 1] &&
-      nodes[destIndex + 1].level > nodes[destIndex].level
-    ) {
-      destNode = nodes[destIndex + 1];
-    }
-
-    const idx = nodes
-      .filter((node) => node.parent?.id === destNode.parent?.id)
-      .findIndex((node) => node.id === destNode.id);
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    this.treeModel.moveNode(draggableId, destNode.parent?.id!, idx);
+    this.treeModel.moveNode(draggableId, parentId!, pos);
   }
 
   public onDragUpdate(initial: DragUpdate) {
+    this.delay.stop();
     if (initial.combine) {
-      const draggabledId = initial.combine.draggableId;
+      const { draggableId } = initial.combine;
 
-      const node = this.treeModel.getNodeById(draggabledId);
+      const node = this.treeModel.getNodeById(draggableId);
 
       if (node && node.children && node.children.length > 0 && !node.expanded) {
         this.delay.start(() => {
-          this.treeModel.updateNode(draggabledId, { ...node, expanded: true });
+          this.treeModel.updateNode(draggableId, { ...node, expanded: true });
         });
       }
+    }
+  }
+
+  public onDragStart(result: DropResult) {
+    const { draggableId } = result;
+    const node = this.treeModel.getNodeById(draggableId);
+
+    if (node && node.children && node.children.length > 0 && node.expanded) {
+      this.treeModel.updateNode(draggableId, { ...node, expanded: false });
     }
   }
 
@@ -572,6 +576,7 @@ export default class Tree extends React.Component<TreeProps, TreeState> {
         <DragDropContext
           onDragEnd={this.onDragEnd}
           onDragUpdate={this.onDragUpdate}
+          onDragStart={this.onDragStart}
         >
           <Droppable
             droppableId="dragTree"

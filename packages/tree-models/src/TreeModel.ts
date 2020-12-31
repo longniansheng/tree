@@ -384,8 +384,8 @@ export default class TreeModel {
     const prevIdx = this.getNodeIdx(node);
 
     const count = this.getDescendantCount(node) + 1;
-    const movingNodes = this.nodes.splice(prevIdx, count);
     const nextIdx = this.getMoveNodePos(nextParent, pos);
+    const movingNodes = this.nodes.splice(prevIdx, count);
     this.nodes.splice(nextIdx, 0, ...movingNodes);
 
     if (prevParent !== nextParent) {
